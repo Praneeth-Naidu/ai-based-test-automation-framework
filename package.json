@@ -1,0 +1,22 @@
+{
+  "name": "qa-automation-framework",
+  "version": "1.0.0",
+  "description": "UI + API test automation framework (Playwright/TypeScript) covering the Conduit RealWorld app and the restful-booker API.",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test tests/ui",
+    "test:api": "playwright test tests/api",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "report": "playwright show-report",
+    "lint": "tsc --noEmit",
+    "docker:up": "docker compose up --build --abort-on-container-exit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@faker-js/faker": "^9.0.0",
+    "@types/node": "^22.7.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=conduit
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/conduit?schema=public
+      - JWT_SECRET=local-dev-secret
+      - PORT=3000
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://127.0.0.1:3000/api/tags', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        # Browser-side requests hit the published host port, not the
+        # in-network service name — the browser runs outside this compose
+        # network even when Playwright itself runs inside it.
+        API_ROOT: http://localhost:3000/api
+    ports:
+      - '8092:80'
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  tests:
+    image: mcr.microsoft.com/playwright:v1.48.0-jammy
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      - CONDUIT_BASE_URL=http://frontend
+      - CONDUIT_API_URL=http://backend:3000/api
+      - HEADLESS=true
+      - CI=true
+    depends_on:
+      - frontend
+      - backend
+    command: sh -c "npm ci && npx playwright test tests/ui tests/api/conduit-auth.spec.ts"
+
+volumes:
+  postgres_data:

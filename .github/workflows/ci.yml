@@ -1,0 +1,70 @@
+name: QA Automation Suite
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 3 * * *' # nightly regression at 03:00 UTC
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      # Builds Postgres + the Conduit backend (Prisma migrations run on
+      # container start) + the Conduit frontend from source, and waits for
+      # their healthchecks before continuing — see docker-compose.yml.
+      - name: Start self-hosted app stack
+        run: docker compose up -d --build --wait postgres backend frontend
+
+      - name: Run tests
+        run: npx playwright test
+        env:
+          CI: true
+          CONDUIT_BASE_URL: http://localhost:8092
+          CONDUIT_API_URL: http://localhost:3000/api
+
+      - name: Dump app logs on failure
+        if: failure()
+        run: docker compose logs postgres backend frontend
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v
+
+  publish-report:
+    needs: test
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: playwright-report
